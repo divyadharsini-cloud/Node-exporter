@@ -68,17 +68,8 @@
           # ----------------------------
           # Cache Metrics
           # ----------------------------
-          CACHE_STATUS = Gauge('browser_cache_cleared', '1 if cache cleared, 0 otherwise', ['hostname'])
-          CACHE_TIME = Gauge('browser_cache_last_cleared_timestamp', 'Unix timestamp of last cache clear', ['hostname'])
-
-          # ----------------------------
-          # Software Inventory
-          # ----------------------------
-          software_info = Gauge(
-              'asset_installed_software_info',
-              'Installed Software Information',
-              ['hostname', 'software_name', 'version', 'installed_date', 'user']
-          )
+          CACHE_STATUS = Gauge('cache_cleared_today', '1 if cache was cleared today, else 0', ['hostname'])
+          CACHE_TIME = Gauge('cache_last_cleared_timestamp', 'Unix timestamp of last cache clear', ['hostname'])
 
           # ----------------------------
           # Info Metrics
@@ -178,25 +169,36 @@
               return "unknown"
 
           # ----------------------------
-          # Cache Monitoring Functions
+          # Cache Monitoring
           # ----------------------------
-          def get_cache_status():
-              cache_paths = [
-                  "/home/user/.cache/mozilla/firefox/",
-                  "/home/user/.cache/google-chrome/"
-              ]
-              for cache_path in cache_paths:
-                  if os.path.exists(cache_path):
-                      for root, dirs, files in os.walk(cache_path):
-                          if files or dirs:
-                              return 0  # Cache not cleared
-              return 1  # Cache cleared
+          LOG_FILE = "/var/log/cache_cleanup.log"
 
           def get_last_cleared_time():
-              timestamp_file = "/tmp/cache_cleared_timestamp"
-              if os.path.exists(timestamp_file):
-                  return os.path.getmtime(timestamp_file)
-              return 0
+              if not os.path.exists(LOG_FILE):
+                  return 0
+
+              try:
+                  with open(LOG_FILE, "r") as f:
+                      last_line = f.readlines()[-1].strip()
+
+                  date_part = last_line.split(": Cache cleared")[0]
+
+                  epoch_time = time.mktime(time.strptime(date_part, "%A %d %B %Y %I:%M:%S %p IST"))
+                  return epoch_time
+
+              except Exception as e:
+                  print(f"Error parsing log: {e}")
+                  return 0
+
+          def get_cache_status():
+              last_time = get_last_cleared_time()
+              if last_time == 0:
+                  return 0
+
+              last_date = time.strftime("%Y-%m-%d", time.localtime(last_time))
+              today_date = time.strftime("%Y-%m-%d", time.localtime())
+
+              return 1 if last_date == today_date else 0
 
           def update_cache_metrics():
               hostname = socket.gethostname()
@@ -204,7 +206,7 @@
               CACHE_TIME.labels(hostname=hostname).set(get_last_cleared_time())
 
           # ----------------------------
-          # Main Collector
+          # Collector
           # ----------------------------
           def collect():
               ram = psutil.virtual_memory()
@@ -246,7 +248,6 @@
               users_gauge.labels(hostname=hostname).set(len(psutil.users()))
               uptime_gauge.labels(hostname=hostname).set(time.time() - psutil.boot_time())
 
-              # Update cache metrics too
               update_cache_metrics()
 
           # ----------------------------
