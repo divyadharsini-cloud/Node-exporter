@@ -1,6 +1,6 @@
 ---
 - name: Deploy Python Prometheus Exporter
-  hosts: 10.17.10.38
+  hosts: Glaucoma-op
   become: yes
 
   tasks:
