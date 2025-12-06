@@ -1,6 +1,6 @@
 ---
 - name: Deploy Python Prometheus Exporter
-  hosts: Melur
+  hosts: Tirumanagalam
   become: yes
 
   tasks:
