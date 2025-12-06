@@ -1,6 +1,6 @@
 ---
 - name: Deploy Python Prometheus Exporter
-  hosts: linux_servers
+  hosts: Melur
   become: yes
 
   tasks:
