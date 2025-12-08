@@ -1,6 +1,6 @@
 ---
 - name: Deploy Python Prometheus Exporter
-  hosts: 10.17.10.59, 10.17.10.36
+  hosts: 10.17.12.21
   become: yes
 
   tasks:
