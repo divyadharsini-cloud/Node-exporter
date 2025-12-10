@@ -209,26 +209,46 @@
               CACHE_TIME.labels(hostname=hostname).set(get_last_cleared_time())
 
           # ----------------------------
-          # CrowdStrike Collector
+          # CrowdStrike Collector (FIXED)
           # ----------------------------
           def get_crowdstrike_info():
-              """Collect client-side CrowdStrike info using falconctl"""
+              """Collect client-side CrowdStrike info using Linux falconctl"""
               try:
-                  output = subprocess.check_output(['falconctl', '-g', '--json'], text=True)
-                  data = eval(output) if output else {}
-                  status = data.get('Status', 'Stopped')
-                  cloud_conn = data.get('CloudConnection', False)
-                  version = data.get('SensorVersion', '0.0.0')
-                  last_update = data.get('LastUpdated', 0)
+                  output = subprocess.check_output(['sudo', 'falconctl', '-g'], text=True)
+
+                  status = 0
+                  cloud = 0
+                  version = 0
+                  last_update = int(time.time())
+
+                  for line in output.splitlines():
+                      line = line.strip()
+
+                      if line.startswith("Status:"):
+                          status = 1 if "Running" in line else 0
+
+                      elif line.startswith("Cloud Connection:"):
+                          cloud = 1 if "Connected" in line else 0
+
+                      elif line.startswith("Sensor Version:"):
+                          raw = line.split(":")[1].strip()
+                          version = float(raw.replace(".", ""))
+
                   return {
-                      'status': 1 if status.lower() == 'running' else 0,
-                      'cloud': 1 if cloud_conn else 0,
-                      'version': float(version.replace('.', '')) if version else 0,
-                      'last_update': int(last_update)
+                      'status': status,
+                      'cloud': cloud,
+                      'version': version,
+                      'last_update': last_update
                   }
+
               except Exception as e:
                   print(f"Error fetching CrowdStrike info: {e}")
-                  return {'status':0,'cloud':0,'version':0,'last_update':0}
+                  return {
+                      'status': 0,
+                      'cloud': 0,
+                      'version': 0,
+                      'last_update': 0
+                  }
 
           def update_crowdstrike_metrics():
               info = get_crowdstrike_info()
