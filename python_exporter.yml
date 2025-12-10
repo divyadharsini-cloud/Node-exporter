@@ -217,7 +217,7 @@
               try:
                   # Get Sensor Version
                   version_output = subprocess.check_output(
-                      ["sudo", "-i", f"{FALCONCTL} -g --version"],
+                      ["sudo", "-i", FALCONCTL, "-g", "--version"],
                       text=True
                   ).strip()
                   version = 0
@@ -226,7 +226,7 @@
 
                   # Get Cloud Connection
                   cloud_output = subprocess.check_output(
-                      ["sudo", "-i", f"{FALCONCTL} -g --cloud"],
+                      ["sudo", "-i", FALCONCTL, "-g", "--cloud"],
                       text=True
                   ).strip()
                   cloud = 1 if "=" in cloud_output and cloud_output.split("=")[1].strip() else 0
