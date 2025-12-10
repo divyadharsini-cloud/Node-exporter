@@ -35,7 +35,7 @@
         state: directory
         mode: '0755'
 
-    - name: Deploy updated asset_agent.py exporter
+    - name: Deploy asset_agent.py exporter
       copy:
         dest: /opt/asset_agent.py
         mode: '0755'
@@ -209,14 +209,14 @@
               CACHE_TIME.labels(hostname=hostname).set(get_last_cleared_time())
 
           # ----------------------------
-          # CrowdStrike Collector (FIXED)
+          # CrowdStrike Collector
           # ----------------------------
           FALCONCTL = "/opt/CrowdStrike/falconctl"
 
           def get_crowdstrike_info():
-              """Collect client-side CrowdStrike info using Linux falconctl"""
               try:
-                  output = subprocess.check_output([FALCONCTL, "-g"], text=True)
+                  # Run falconctl using a root login shell
+                  output = subprocess.check_output(["sudo", "-i", FALCONCTL, "-g"], text=True)
                   status = 0
                   cloud = 0
                   version = 0
@@ -238,7 +238,6 @@
                       'version': version,
                       'last_update': last_update
                   }
-
               except Exception as e:
                   print(f"Error fetching CrowdStrike info: {e}")
                   return {
@@ -307,7 +306,7 @@
                   collect()
                   time.sleep(30)
 
-    - name: Run the exporter in background
-      shell: "nohup python3 /opt/asset_agent.py > /var/log/asset_agent.log 2>&1 &"
+    - name: Run the exporter in background using root login shell
+      shell: "nohup sudo -i python3 /opt/asset_agent.py > /var/log/asset_agent.log 2>&1 &"
       args:
         chdir: /opt
