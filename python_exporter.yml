@@ -1,6 +1,6 @@
 ---
-- name: Deploy Python Prometheus Exporter
-  hosts: 172.17.34.126
+- name: Deploy Python Prometheus Asset Exporter with CrowdStrike Metrics
+  hosts: Melur
   become: yes
 
   tasks:
@@ -35,11 +35,12 @@
         state: directory
         mode: '0755'
 
-    - name: Deploy asset_agent.py exporter
+    - name: Deploy updated asset_agent.py exporter
       copy:
         dest: /opt/asset_agent.py
         mode: '0755'
         content: |
+          #!/usr/bin/env python3
           import time
           import psutil
           import platform
@@ -70,6 +71,14 @@
           # ----------------------------
           CACHE_STATUS = Gauge('cache_cleared_today', '1 if cache was cleared today, else 0', ['hostname'])
           CACHE_TIME = Gauge('cache_last_cleared_timestamp', 'Unix timestamp of last cache clear', ['hostname'])
+
+          # ----------------------------
+          # CrowdStrike Metrics
+          # ----------------------------
+          cs_sensor_status = Gauge('crowdstrike_sensor_status', 'CrowdStrike Sensor Status (1=running, 0=stopped)', ['hostname'])
+          cs_cloud_connection = Gauge('crowdstrike_cloud_connection', 'CrowdStrike Cloud Connection (1=connected, 0=disconnected)', ['hostname'])
+          cs_sensor_version = Gauge('crowdstrike_sensor_version', 'CrowdStrike Sensor Version numeric', ['hostname'])
+          cs_last_update = Gauge('crowdstrike_last_update_timestamp', 'Last CrowdStrike agent update timestamp (Unix)', ['hostname'])
 
           # ----------------------------
           # Info Metrics
@@ -176,16 +185,12 @@
           def get_last_cleared_time():
               if not os.path.exists(LOG_FILE):
                   return 0
-
               try:
                   with open(LOG_FILE, "r") as f:
                       last_line = f.readlines()[-1].strip()
-
                   date_part = last_line.split(": Cache cleared")[0]
-
                   epoch_time = time.mktime(time.strptime(date_part, "%A %d %B %Y %I:%M:%S %p IST"))
                   return epoch_time
-
               except Exception as e:
                   print(f"Error parsing log: {e}")
                   return 0
@@ -194,16 +199,43 @@
               last_time = get_last_cleared_time()
               if last_time == 0:
                   return 0
-
               last_date = time.strftime("%Y-%m-%d", time.localtime(last_time))
               today_date = time.strftime("%Y-%m-%d", time.localtime())
-
               return 1 if last_date == today_date else 0
 
           def update_cache_metrics():
               hostname = socket.gethostname()
               CACHE_STATUS.labels(hostname=hostname).set(get_cache_status())
               CACHE_TIME.labels(hostname=hostname).set(get_last_cleared_time())
+
+          # ----------------------------
+          # CrowdStrike Collector
+          # ----------------------------
+          def get_crowdstrike_info():
+              """Collect client-side CrowdStrike info using falconctl"""
+              try:
+                  output = subprocess.check_output(['falconctl', '-g', '--json'], text=True)
+                  data = eval(output) if output else {}
+                  status = data.get('Status', 'Stopped')
+                  cloud_conn = data.get('CloudConnection', False)
+                  version = data.get('SensorVersion', '0.0.0')
+                  last_update = data.get('LastUpdated', 0)
+                  return {
+                      'status': 1 if status.lower() == 'running' else 0,
+                      'cloud': 1 if cloud_conn else 0,
+                      'version': float(version.replace('.', '')) if version else 0,
+                      'last_update': int(last_update)
+                  }
+              except Exception as e:
+                  print(f"Error fetching CrowdStrike info: {e}")
+                  return {'status':0,'cloud':0,'version':0,'last_update':0}
+
+          def update_crowdstrike_metrics():
+              info = get_crowdstrike_info()
+              cs_sensor_status.labels(hostname=hostname).set(info['status'])
+              cs_cloud_connection.labels(hostname=hostname).set(info['cloud'])
+              cs_sensor_version.labels(hostname=hostname).set(info['version'])
+              cs_last_update.labels(hostname=hostname).set(info['last_update'])
 
           # ----------------------------
           # Collector
@@ -229,11 +261,7 @@
               ip_all_info.info({'hostname': hostname, 'ips': ','.join(get_all_ips())})
               mac_info.info({'hostname': hostname, 'mac': get_mac()})
               serial_info.info({'hostname': hostname, 'serial': get_serial_number()})
-              manufacturer_info.info({
-                  'hostname': hostname,
-                  'manufacturer': get_manufacturer(),
-                  'manufacture_date': get_manufacture_date()
-              })
+              manufacturer_info.info({'hostname': hostname, 'manufacturer': get_manufacturer(), 'manufacture_date': get_manufacture_date()})
               model_info.info({'hostname': hostname, 'model': get_model()})
               bios_info.info({'hostname': hostname, 'bios': get_bios_version()})
 
@@ -249,6 +277,7 @@
               uptime_gauge.labels(hostname=hostname).set(time.time() - psutil.boot_time())
 
               update_cache_metrics()
+              update_crowdstrike_metrics()
 
           # ----------------------------
           # Main Loop
