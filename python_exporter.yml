@@ -209,21 +209,30 @@
               CACHE_TIME.labels(hostname=hostname).set(get_last_cleared_time())
 
           # ----------------------------
-          # CrowdStrike Collector
+          # CrowdStrike Collector (Updated)
           # ----------------------------
           FALCONCTL = "/opt/CrowdStrike/falconctl18308"
 
           def get_crowdstrike_info():
               try:
-                  cmd = f"{FALCONCTL} -g --version --cloud"
-                  output = subprocess.check_output(
-                      ["sudo", "-i", "bash", "-lc", cmd],
+                  # Get Sensor Version
+                  version_output = subprocess.check_output(
+                      ["sudo", "-i", f"{FALCONCTL} -g --version"],
                       text=True
-                  )
-                  status = 0
-                  cloud = 0
+                  ).strip()
                   version = 0
-                  
+                  if "version" in version_output.lower():
+                      version = int(''.join(filter(str.isdigit, version_output)))
+
+                  # Get Cloud Connection
+                  cloud_output = subprocess.check_output(
+                      ["sudo", "-i", f"{FALCONCTL} -g --cloud"],
+                      text=True
+                  ).strip()
+                  cloud = 1 if "=" in cloud_output and cloud_output.split("=")[1].strip() else 0
+
+                  # Keep existing logic for status and last_update
+                  status = 1  # Sensor running
                   try:
                       last_update = int(subprocess.check_output(
                           ["stat", "-c", "%Y", "/opt/CrowdStrike/Registry.bin"], 
@@ -231,23 +240,14 @@
                       ).strip())
                   except:
                       last_update = 0
-                      
-                  for line in output.splitlines():
-                      line = line.strip()
-                      if line.startswith("version:"):
-                          raw = line.split(":")[1].strip()
-                          version = int(''.join(filter(str.isdigit, raw)))
-                      elif line.startswith("Cloud:"):
-                          cloud = 1 if "." in line else 0
 
-                  status = 1
-                      
                   return {
                       'status': status,
                       'cloud': cloud,
                       'version': version,
                       'last_update': last_update
                   }
+
               except Exception as e:
                   print(f"Error fetching CrowdStrike info: {e}")
                   return {
