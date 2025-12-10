@@ -211,28 +211,26 @@
           # ----------------------------
           # CrowdStrike Collector (FIXED)
           # ----------------------------
+          FALCONCTL = "/opt/CrowdStrike/falconctl"
+
           def get_crowdstrike_info():
               """Collect client-side CrowdStrike info using Linux falconctl"""
               try:
-                  output = subprocess.check_output(['sudo', 'falconctl', '-g'], text=True)
-
+                  output = subprocess.check_output([FALCONCTL, "-g"], text=True)
                   status = 0
                   cloud = 0
                   version = 0
-                  last_update = int(time.time())
+                  last_update = int(subprocess.check_output(["stat", "-c", "%Y", "/opt/CrowdStrike/Registry.bin"], text=True).strip())
 
                   for line in output.splitlines():
                       line = line.strip()
-
                       if line.startswith("Status:"):
                           status = 1 if "Running" in line else 0
-
                       elif line.startswith("Cloud Connection:"):
                           cloud = 1 if "Connected" in line else 0
-
                       elif line.startswith("Sensor Version:"):
                           raw = line.split(":")[1].strip()
-                          version = float(raw.replace(".", ""))
+                          version = int(raw.replace(".", ""))
 
                   return {
                       'status': status,
