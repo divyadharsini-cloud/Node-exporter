@@ -220,7 +220,7 @@
                   status = 0
                   cloud = 0
                   version = 0
-                  last_update = int(subprocess.check_output(["stat", "-c", "%Y", "/opt/CrowdStrike/Registry.bin"], text=True).strip())
+                  last_update = int(subprocess.check_output(["sudo", "-i", "stat", "-c", "%Y", "/opt/CrowdStrike/Registry.bin"], text=True).strip())
 
                   for line in output.splitlines():
                       line = line.strip()
@@ -230,7 +230,7 @@
                           cloud = 1 if "Connected" in line else 0
                       elif line.startswith("Sensor Version:"):
                           raw = line.split(":")[1].strip()
-                          version = int(raw.replace(".", ""))
+                          version = int(''.join(filter(str.isdigit, raw)))
 
                   return {
                       'status': status,
