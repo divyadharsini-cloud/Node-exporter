@@ -1,6 +1,6 @@
 ---
 - name: Deploy Python Prometheus Asset Exporter with CrowdStrike Metrics
-  hosts: 10.17.12.38
+  hosts: 10.17.12.21
   become: yes
 
   tasks:
@@ -211,11 +211,11 @@
           # ----------------------------
           # CrowdStrike Collector
           # ----------------------------
-          FALCONCTL = "/opt/CrowdStrike/falconctl"
+          FALCONCTL = "/opt/CrowdStrike/falconctl18308"
 
           def get_crowdstrike_info():
               try:
-                  cmd = f"{FALCONCTL} -g"
+                  cmd = f"{FALCONCTL} -g --version --cloud"
                   output = subprocess.check_output(
                       ["sudo", "-i", "bash", "-lc", cmd],
                       text=True
@@ -234,14 +234,14 @@
                       
                   for line in output.splitlines():
                       line = line.strip()
-                      if line.startswith("Status:"):
-                          status = 1 if "Running" in line else 0
-                      elif line.startswith("Cloud Connection:"):
-                          cloud = 1 if "Connected" in line else 0
-                      elif line.startswith("Sensor Version:"):
+                      if line.startswith("version:"):
                           raw = line.split(":")[1].strip()
                           version = int(''.join(filter(str.isdigit, raw)))
+                      elif line.startswith("Cloud:"):
+                          cloud = 1 if "." in line else 0
 
+                  status = 1
+                      
                   return {
                       'status': status,
                       'cloud': cloud,
