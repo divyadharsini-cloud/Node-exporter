@@ -1,6 +1,6 @@
 ---
 - name: Deploy Python Prometheus Asset Exporter with CrowdStrike Metrics
-  hosts: Melur
+  hosts: 10.17.12.40
   become: yes
 
   tasks:
@@ -211,7 +211,7 @@
           # ----------------------------
           # CrowdStrike Collector (Updated)
           # ----------------------------
-          FALCONCTL = "/opt/CrowdStrike/falconctl18308"
+          FALCONCTL = "/opt/CrowdStrike/falconctl"
 
           def get_crowdstrike_info():
               try:
