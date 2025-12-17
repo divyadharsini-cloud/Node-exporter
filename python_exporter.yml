@@ -67,6 +67,15 @@
           cpu_utilization = Gauge('asset_cpu_utilization_percent', 'CPU utilization percentage', ['hostname'])
 
           # ----------------------------
+          # Patch status Metrics
+          # ----------------------------
+          patch_status_gauge = Gauge(
+              'endpoint_patch_status',
+              'patch status (1=SUCCESS, 2=UP-TO-DATE, 0=FAILED),
+              ['hostname']
+          )
+
+          # ----------------------------
           # Cache Metrics
           # ----------------------------
           CACHE_STATUS = Gauge('cache_cleared_today', '1 if cache was cleared today, else 0', ['hostname'])
@@ -96,6 +105,28 @@
           manufacturer_info = Info('asset_manufacturer_info', 'System manufacturer with manufacture date')
           model_info = Info('asset_model_info', 'System model')
           bios_info = Info('asset_bios_info', 'BIOS version')
+
+          # ----------------------------
+          # Patch Status Reader
+          # ----------------------------
+          def update_patch_status():
+              try:
+                  if not os.path.exists(PATCH_FILE):
+                      patch_status_gauge.labels(hostname=hostname).set(0)
+                      return
+
+                  with open(PATCH_FILE, "r") as f:
+                      data = f.read()
+
+                  if "SUCCESS" in data:
+                      patch_status_gauge.labels(hostname=hostname).set(1)
+                  elif "UP-TO-DATE" in data:
+                      patch_status_gauge.labels(hostname=hostname).set(2)
+                  else:
+                      patch_status_gauge.labels(hostname=hostname).set(0)
+                  except Exception as e:
+                      print(f"Patch status error: {e}")
+                      patch_status_gauge.labels(hostname=hostname).set(0)
 
           # ----------------------------
           # Helper Functions
@@ -305,6 +336,7 @@
 
               update_cache_metrics()
               update_crowdstrike_metrics()
+              update_patch_status()
 
           # ----------------------------
           # Main Loop
