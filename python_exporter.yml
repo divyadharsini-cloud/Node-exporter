@@ -1,6 +1,6 @@
 ---
 - name: Deploy Python Prometheus Asset Exporter with CrowdStrike Metrics
-  hosts: 10.17.11.68
+  hosts: 10.17.12.40
   become: yes
 
   tasks:
