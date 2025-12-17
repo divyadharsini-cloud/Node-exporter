@@ -1,6 +1,6 @@
 ---
 - name: Deploy Python Prometheus Asset Exporter with CrowdStrike Metrics
-  hosts: 10.17.12.40
+  hosts: linux_servers
   become: yes
 
   tasks:
@@ -109,6 +109,8 @@
           # ----------------------------
           # Patch Status Reader
           # ----------------------------
+          PATCH_FILE = "/opt/patch_status.txt"
+          
           def update_patch_status():
               try:
                   if not os.path.exists(PATCH_FILE):
@@ -124,9 +126,10 @@
                       patch_status_gauge.labels(hostname=hostname).set(2)
                   else:
                       patch_status_gauge.labels(hostname=hostname).set(0)
-                  except Exception as e:
-                      print(f"Patch status error: {e}")
-                      patch_status_gauge.labels(hostname=hostname).set(0)
+              
+              except Exception as e:
+                  print(f"Patch status error: {e}")
+                  patch_status_gauge.labels(hostname=hostname).set(0)
 
           # ----------------------------
           # Helper Functions
