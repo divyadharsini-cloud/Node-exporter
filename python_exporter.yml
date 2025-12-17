@@ -71,7 +71,7 @@
           # ----------------------------
           patch_status_gauge = Gauge(
               'endpoint_patch_status',
-              'patch status (1=SUCCESS, 2=UP-TO-DATE, 0=FAILED),
+              'patch status (1=SUCCESS, 2=UP-TO-DATE, 0=FAILED)',
               ['hostname']
           )
 
