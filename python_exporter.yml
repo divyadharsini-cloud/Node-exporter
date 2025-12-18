@@ -1,6 +1,6 @@
 ---
 - name: Deploy Python Prometheus Asset Exporter with CrowdStrike Metrics
-  hosts: Tirumangalam
+  hosts: Melur
   become: yes
 
   tasks:
@@ -75,6 +75,12 @@
               ['hostname']
           )
 
+          patch_last_applied = Gauge(
+              'endpoint_patch_last_applied_timestamp',
+              'Last patch applied time (Unix epoch)',
+              ['hostname']
+          )
+
           # ----------------------------
           # Cache Metrics
           # ----------------------------
@@ -113,23 +119,37 @@
           
           def update_patch_status():
               try:
+                  status = 0
+                  patch_time = 0
+                  
                   if not os.path.exists(PATCH_FILE):
                       patch_status_gauge.labels(hostname=hostname).set(0)
+                      patch_last_applied.labels(hostname=hostname).set(0)
                       return
 
                   with open(PATCH_FILE, "r") as f:
-                      data = f.read()
+                      for line in f:
+                          line = line.strip()
 
-                  if "SUCCESS" in data:
-                      patch_status_gauge.labels(hostname=hostname).set(1)
-                  elif "UP-TO-DATE" in data:
-                      patch_status_gauge.labels(hostname=hostname).set(2)
-                  else:
-                      patch_status_gauge.labels(hostname=hostname).set(0)
+                          if line.startswith("result="):
+                              if "SUCCESS" in line:
+                                  status_value = 1
+                              elif "UP-TO-DATE" in line:
+                                  status_value = 2
+                              else:
+                                  status_value = 0
+
+                          if line.startswith("time="):
+                              patch_time = int(line.split("=")[1])
+
+                  
+                  patch_status_gauge.labels(hostname=hostname).set(status_value)
+                  patch_last_applied.labels(hostname=hostname).set(patch_time)
               
               except Exception as e:
                   print(f"Patch status error: {e}")
                   patch_status_gauge.labels(hostname=hostname).set(0)
+                  patch_last_applied.labels(hostname=hostname).set(0)
 
           # ----------------------------
           # Helper Functions
