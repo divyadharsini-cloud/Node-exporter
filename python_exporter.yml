@@ -1,6 +1,6 @@
 ---
 - name: Deploy Python Prometheus Asset Exporter with CrowdStrike Metrics
-  hosts: linux_servers
+  hosts: Melur
   become: yes
 
   tasks:
