@@ -1,6 +1,6 @@
 ---
 - name: Deploy Python Prometheus Asset Exporter with CrowdStrike Metrics
-  hosts: Tirumangalam
+  hosts: Glaucoma-op
   become: yes
 
   tasks:
