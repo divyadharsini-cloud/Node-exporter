@@ -1,6 +1,6 @@
 ---
 - name: Deploy Python Prometheus Asset Exporter with CrowdStrike Metrics
-  hosts: Glaucoma-op
+  hosts: FH-1G(reach)
   become: yes
 
   tasks:
