@@ -1,6 +1,6 @@
 ---
 - name: Deploy Python Prometheus Asset Exporter with CrowdStrike Metrics
-  hosts: FH-2G
+  hosts: 172.17.32.253, 172.17.32.92, 172.17.32.249, 172.17.2.61, 172.17.16.30
   become: yes
 
   tasks:
