@@ -1,6 +1,6 @@
 ---
 - name: Deploy Python Prometheus Asset Exporter with CrowdStrike Metrics
-  hosts: Test-Batch1
+  hosts: DPDYPHGFU010016, DPDYPHGFU010022
   become: yes
 
   tasks:
