@@ -1,54 +1,52 @@
 ---
-- name: Deploy Python Prometheus Asset Exporter
+- name: Deploy Python Prometheus Asset Exporter with CrowdStrike Metrics
   hosts: linux_servers
   become: yes
 
   tasks:
-
-    # ----------------------------------------------------
-    # Install required OS packages
-    # ----------------------------------------------------
-    - name: Install required packages
+    # -----------------------
+    # Install System Packages
+    # -----------------------
+    - name: Ensure required system packages are installed
       apt:
         name:
-          - python3
-          - python3-pip
-          - dmidecode
           - curl
+          - python3
         state: present
         update_cache: yes
-      register: apt_result
-      retries: 3
-      delay: 15
-      until: apt_result is succeeded
 
-    # ----------------------------------------------------
-    # Install Python dependencies
-    # ----------------------------------------------------
-    - name: Install Python libraries
+    # -----------------------
+    # Install pip and Python libs system-wide
+    # -----------------------
+    - name: Ensure pip is installed
+      get_url:
+        url: https://bootstrap.pypa.io/get-pip.py
+        dest: /tmp/get-pip.py
+        mode: '0755'
+
+    - name: Install pip system-wide
+      command: python3 /tmp/get-pip.py --break-system-packages
+      args:
+        creates: /usr/local/bin/pip3
+
+    - name: Install Python libraries system-wide
       pip:
         name:
           - prometheus_client
           - psutil
           - distro
         executable: pip3
-      register: pip_result
-      retries: 3
-      delay: 15
-      until: pip_result is succeeded
+        extra_args: --break-system-packages
 
-    # ----------------------------------------------------
-    # Ensure /opt directory exists
-    # ----------------------------------------------------
-    - name: Ensure /opt exists
+    # -----------------------
+    # Deploy Exporter Script
+    # -----------------------
+    - name: Ensure /opt directory exists
       file:
         path: /opt
         state: directory
         mode: '0755'
 
-    # ----------------------------------------------------
-    # Deploy exporter script
-    # ----------------------------------------------------
     - name: Deploy asset_agent.py exporter
       copy:
         dest: /opt/asset_agent.py
@@ -60,14 +58,21 @@
 
           hostname = socket.gethostname()
 
+          # -----------------------
+          # Inventory (ONE row only)
+          # -----------------------
           inventory = Gauge(
               "asset_inventory_info",
               "Asset inventory",
               ["hostname","os","kernel","arch","cpu","model","bios","serial","manufacturer","ip"]
           )
 
+          # Safe numeric MAC
           mac_numeric = Gauge("asset_primary_mac_numeric","Primary MAC as number",["hostname"])
 
+          # -----------------------
+          # System
+          # -----------------------
           cpu_cores = Gauge("asset_cpu_cores","CPU cores",["hostname"])
           cpu_util = Gauge("asset_cpu_utilization_percent","CPU usage %",["hostname"])
           ram_total = Gauge("asset_ram_total_mb","RAM total",["hostname"])
@@ -77,21 +82,33 @@
           users = Gauge("asset_logged_in_users","Users",["hostname"])
           uptime = Gauge("asset_uptime_seconds","Uptime",["hostname"])
 
+          # -----------------------
+          # Patch
+          # -----------------------
           patch_status = Gauge("endpoint_patch_status","Patch status",["hostname"])
           patch_time = Gauge("endpoint_patch_last_applied_timestamp","Patch time",["hostname"])
           patch_count = Gauge("endpoint_patches_applied_total","Patch count",["hostname"])
           PATCH_FILE="/opt/patch_status.txt"
 
+          # -----------------------
+          # Cache
+          # -----------------------
           cache_today = Gauge("cache_cleared_today","Cache today",["hostname"])
           cache_time = Gauge("cache_last_cleared_timestamp","Cache time",["hostname"])
           LOG_FILE="/var/log/cache_cleanup.log"
 
+          # -----------------------
+          # CrowdStrike
+          # -----------------------
           cs_status = Gauge("crowdstrike_sensor_status","CS running",["hostname"])
           cs_cloud = Gauge("crowdstrike_cloud_connection","CS cloud",["hostname"])
           cs_version = Gauge("crowdstrike_sensor_version","CS version",["hostname"])
           cs_last = Gauge("crowdstrike_last_update_timestamp","CS last",["hostname"])
           FALCONCTL="/opt/CrowdStrike/falconctl"
 
+          # -----------------------
+          # Helpers
+          # -----------------------
           def sh(cmd):
               try: return subprocess.check_output(cmd,text=True).strip()
               except: return "unknown"
@@ -150,6 +167,9 @@
                   cs_version.labels(hostname).set(0)
                   cs_last.labels(hostname).set(0)
 
+          # -----------------------
+          # Collect
+          # -----------------------
           def collect():
               ram=psutil.virtual_memory()
               cpu_cores.labels(hostname).set(psutil.cpu_count(False))
@@ -189,23 +209,27 @@
               update_patch()
               update_cs()
 
+          # -----------------------
+          # Main
+          # -----------------------
           start_http_server(9888)
           while True:
               collect()
               time.sleep(30)
 
-    # ----------------------------------------------------
-    # Create systemd service for exporter
-    # ----------------------------------------------------
-    - name: Create exporter systemd service
+    # -----------------------
+    # Create systemd service
+    # -----------------------
+    - name: Create systemd service for exporter
       copy:
-        dest: /etc/systemd/system/asset-exporter.service
+        dest: /etc/systemd/system/asset_exporter.service
         content: |
           [Unit]
-          Description=Prometheus Asset & CrowdStrike Exporter
+          Description=Python Prometheus Asset Exporter
           After=network.target
 
           [Service]
+          Type=simple
           ExecStart=/usr/bin/python3 /opt/asset_agent.py
           Restart=always
           User=root
@@ -213,11 +237,11 @@
           [Install]
           WantedBy=multi-user.target
 
-    - name: Reload systemd daemon
+    - name: Reload systemd
       command: systemctl daemon-reload
 
-    - name: Enable exporter service
-      command: systemctl enable asset-exporter
-
-    - name: Start exporter service
-      command: systemctl restart asset-exporter
+    - name: Enable and start exporter service
+      systemd:
+        name: asset_exporter.service
+        enabled: yes
+        state: started
