@@ -1,0 +1,223 @@
+---
+- name: Deploy Python Prometheus Asset Exporter
+  hosts: TMDUCH1FTHE0020, DMDUCH1FMRD0017
+  become: yes
+
+  tasks:
+
+    # ----------------------------------------------------
+    # Install required OS packages
+    # ----------------------------------------------------
+    - name: Install required packages
+      apt:
+        name:
+          - python3
+          - python3-pip
+          - dmidecode
+          - curl
+        state: present
+        update_cache: yes
+      register: apt_result
+      retries: 3
+      delay: 15
+      until: apt_result is succeeded
+
+    # ----------------------------------------------------
+    # Install Python dependencies
+    # ----------------------------------------------------
+    - name: Install Python libraries
+      pip:
+        name:
+          - prometheus_client
+          - psutil
+          - distro
+        executable: pip3
+      register: pip_result
+      retries: 3
+      delay: 15
+      until: pip_result is succeeded
+
+    # ----------------------------------------------------
+    # Ensure /opt directory exists
+    # ----------------------------------------------------
+    - name: Ensure /opt exists
+      file:
+        path: /opt
+        state: directory
+        mode: '0755'
+
+    # ----------------------------------------------------
+    # Deploy exporter script
+    # ----------------------------------------------------
+    - name: Deploy asset_agent.py exporter
+      copy:
+        dest: /opt/asset_agent.py
+        mode: '0755'
+        content: |
+          #!/usr/bin/env python3
+          import time, psutil, platform, socket, subprocess, os, distro, uuid
+          from prometheus_client import start_http_server, Gauge
+
+          hostname = socket.gethostname()
+
+          inventory = Gauge(
+              "asset_inventory_info",
+              "Asset inventory",
+              ["hostname","os","kernel","arch","cpu","model","bios","serial","manufacturer","ip"]
+          )
+
+          mac_numeric = Gauge("asset_primary_mac_numeric","Primary MAC as number",["hostname"])
+
+          cpu_cores = Gauge("asset_cpu_cores","CPU cores",["hostname"])
+          cpu_util = Gauge("asset_cpu_utilization_percent","CPU usage %",["hostname"])
+          ram_total = Gauge("asset_ram_total_mb","RAM total",["hostname"])
+          ram_used = Gauge("asset_ram_used_mb","RAM used",["hostname"])
+          disk_total = Gauge("asset_disk_total_bytes","Disk total",["hostname","disk"])
+          disk_used = Gauge("asset_disk_used_bytes","Disk used",["hostname","disk"])
+          users = Gauge("asset_logged_in_users","Users",["hostname"])
+          uptime = Gauge("asset_uptime_seconds","Uptime",["hostname"])
+
+          patch_status = Gauge("endpoint_patch_status","Patch status",["hostname"])
+          patch_time = Gauge("endpoint_patch_last_applied_timestamp","Patch time",["hostname"])
+          patch_count = Gauge("endpoint_patches_applied_total","Patch count",["hostname"])
+          PATCH_FILE="/opt/patch_status.txt"
+
+          cache_today = Gauge("cache_cleared_today","Cache today",["hostname"])
+          cache_time = Gauge("cache_last_cleared_timestamp","Cache time",["hostname"])
+          LOG_FILE="/var/log/cache_cleanup.log"
+
+          cs_status = Gauge("crowdstrike_sensor_status","CS running",["hostname"])
+          cs_cloud = Gauge("crowdstrike_cloud_connection","CS cloud",["hostname"])
+          cs_version = Gauge("crowdstrike_sensor_version","CS version",["hostname"])
+          cs_last = Gauge("crowdstrike_last_update_timestamp","CS last",["hostname"])
+          FALCONCTL="/opt/CrowdStrike/falconctl"
+
+          def sh(cmd):
+              try: return subprocess.check_output(cmd,text=True).strip()
+              except: return "unknown"
+
+          def get_ip():
+              for _,addrs in psutil.net_if_addrs().items():
+                  for a in addrs:
+                      if a.family==socket.AF_INET and not a.address.startswith("127."):
+                          return a.address
+              return "unknown"
+
+          def get_primary_mac():
+              mac = uuid.getnode()
+              return mac if (mac >> 40) % 2 == 0 else 0
+
+          def get_cache_time():
+              try:
+                  with open(LOG_FILE) as f:
+                      line=f.readlines()[-1]
+                  return int(time.mktime(time.strptime(line.split(":")[0],"%A %d %B %Y %I:%M:%S %p IST")))
+              except:
+                  return 0
+
+          def get_cache_today():
+              t=get_cache_time()
+              if t==0: return 0
+              return 1 if time.strftime("%Y-%m-%d",time.localtime(t))==time.strftime("%Y-%m-%d") else 0
+
+          def update_patch():
+              s=0;t=0;c=0
+              try:
+                  if os.path.exists(PATCH_FILE):
+                      with open(PATCH_FILE) as f:
+                          for l in f:
+                              if "SUCCESS" in l: s=1
+                              if "UP-TO-DATE" in l: s=2
+                              if l.startswith("time="): t=int(l.split("=")[1])
+                              if l.startswith("count="): c=int(l.split("=")[1])
+              except: pass
+              patch_status.labels(hostname).set(s)
+              patch_time.labels(hostname).set(t)
+              patch_count.labels(hostname).set(c)
+
+          def update_cs():
+              try:
+                  v=sh(["sudo","-i",FALCONCTL,"-g","--version"])
+                  cs_version.labels(hostname).set(int("".join(filter(str.isdigit,v)) or 0))
+                  cs_status.labels(hostname).set(1)
+                  cs_cloud.labels(hostname).set(1)
+                  try:
+                      cs_last.labels(hostname).set(int(sh(["stat","-c","%Y","/opt/CrowdStrike/Registry.bin"])))
+                  except: cs_last.labels(hostname).set(0)
+              except:
+                  cs_status.labels(hostname).set(0)
+                  cs_cloud.labels(hostname).set(0)
+                  cs_version.labels(hostname).set(0)
+                  cs_last.labels(hostname).set(0)
+
+          def collect():
+              ram=psutil.virtual_memory()
+              cpu_cores.labels(hostname).set(psutil.cpu_count(False))
+              cpu_util.labels(hostname).set(psutil.cpu_percent())
+              ram_total.labels(hostname).set(ram.total/1024/1024)
+              ram_used.labels(hostname).set(ram.used/1024/1024)
+
+              for p in psutil.disk_partitions():
+                  try:
+                      dev=os.path.basename(p.device)
+                      if not dev: continue
+                      u=psutil.disk_usage(p.mountpoint)
+                      disk_total.labels(hostname,dev).set(u.total)
+                      disk_used.labels(hostname,dev).set(u.used)
+                  except: pass
+
+              users.labels(hostname).set(len(psutil.users()))
+              uptime.labels(hostname).set(time.time()-psutil.boot_time())
+
+              inventory.clear()
+              inventory.labels(
+                  hostname,
+                  distro.name(pretty=True),
+                  platform.release(),
+                  platform.machine(),
+                  platform.processor(),
+                  sh(["dmidecode","-s","system-product-name"]),
+                  sh(["dmidecode","-s","bios-version"]),
+                  sh(["dmidecode","-s","system-serial-number"]),
+                  sh(["dmidecode","-s","system-manufacturer"]),
+                  get_ip()
+              ).set(1)
+
+              mac_numeric.labels(hostname).set(get_primary_mac())
+              cache_today.labels(hostname).set(get_cache_today())
+              cache_time.labels(hostname).set(get_cache_time())
+              update_patch()
+              update_cs()
+
+          start_http_server(9888)
+          while True:
+              collect()
+              time.sleep(30)
+
+    # ----------------------------------------------------
+    # Create systemd service for exporter
+    # ----------------------------------------------------
+    - name: Create exporter systemd service
+      copy:
+        dest: /etc/systemd/system/asset-exporter.service
+        content: |
+          [Unit]
+          Description=Prometheus Asset & CrowdStrike Exporter
+          After=network.target
+
+          [Service]
+          ExecStart=/usr/bin/python3 /opt/asset_agent.py
+          Restart=always
+          User=root
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload systemd daemon
+      command: systemctl daemon-reload
+
+    - name: Enable exporter service
+      command: systemctl enable asset-exporter
+
+    - name: Start exporter service
+      command: systemctl restart asset-exporter
