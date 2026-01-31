@@ -1,6 +1,6 @@
 ---
 - name: Deploy Python Prometheus Asset Exporter
-  hosts: TMDUCH1FTHE0020, DMDUCH1FMRD0017
+  hosts: linux_servers
   become: yes
 
   tasks:
