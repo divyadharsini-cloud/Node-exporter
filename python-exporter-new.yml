@@ -1,13 +1,14 @@
 ---
-- name: Deploy Python Prometheus Asset Exporter with CrowdStrike Metrics
+- name: Deploy Python Prometheus Asset Exporter (CMDB Style)
   hosts: linux_servers
   become: yes
 
   tasks:
+
     # -----------------------
-    # Install System Packages
+    # System packages
     # -----------------------
-    - name: Ensure required system packages are installed
+    - name: Install base packages
       apt:
         name:
           - curl
@@ -16,20 +17,20 @@
         update_cache: yes
 
     # -----------------------
-    # Install pip and Python libs system-wide
+    # pip
     # -----------------------
-    - name: Ensure pip is installed
+    - name: Download pip installer
       get_url:
         url: https://bootstrap.pypa.io/get-pip.py
         dest: /tmp/get-pip.py
         mode: '0755'
 
-    - name: Install pip system-wide
+    - name: Install pip
       command: python3 /tmp/get-pip.py --break-system-packages
       args:
         creates: /usr/local/bin/pip3
 
-    - name: Install Python libraries system-wide
+    - name: Install python libraries
       pip:
         name:
           - prometheus_client
@@ -39,15 +40,15 @@
         extra_args: --break-system-packages
 
     # -----------------------
-    # Deploy Exporter Script
+    # Exporter
     # -----------------------
-    - name: Ensure /opt directory exists
+    - name: Create /opt
       file:
         path: /opt
         state: directory
         mode: '0755'
 
-    - name: Deploy asset_agent.py exporter
+    - name: Install asset exporter
       copy:
         dest: /opt/asset_agent.py
         mode: '0755'
@@ -59,16 +60,13 @@
           hostname = socket.gethostname()
 
           # -----------------------
-          # Inventory (ONE row only)
+          # Inventory (CMDB)
           # -----------------------
           inventory = Gauge(
               "asset_inventory_info",
               "Asset inventory",
-              ["hostname","os","kernel","arch","cpu","model","bios","serial","manufacturer","ip"]
+              ["hostname","os","kernel","arch","cpu","model","bios","serial","manufacturer","ip","mac"]
           )
-
-          # Safe numeric MAC
-          mac_numeric = Gauge("asset_primary_mac_numeric","Primary MAC as number",["hostname"])
 
           # -----------------------
           # System
@@ -122,7 +120,9 @@
 
           def get_primary_mac():
               mac = uuid.getnode()
-              return mac if (mac >> 40) % 2 == 0 else 0
+              if (mac >> 40) % 2:
+                  return "unknown"
+              return ":".join(f"{(mac >> i) & 0xff:02x}" for i in range(40, -1, -8))
 
           def get_cache_time():
               try:
@@ -200,10 +200,10 @@
                   sh(["dmidecode","-s","bios-version"]),
                   sh(["dmidecode","-s","system-serial-number"]),
                   sh(["dmidecode","-s","system-manufacturer"]),
-                  get_ip()
+                  get_ip(),
+                  get_primary_mac()
               ).set(1)
 
-              mac_numeric.labels(hostname).set(get_primary_mac())
               cache_today.labels(hostname).set(get_cache_today())
               cache_time.labels(hostname).set(get_cache_time())
               update_patch()
@@ -218,18 +218,17 @@
               time.sleep(30)
 
     # -----------------------
-    # Create systemd service
+    # systemd
     # -----------------------
-    - name: Create systemd service for exporter
+    - name: Create systemd service
       copy:
         dest: /etc/systemd/system/asset_exporter.service
         content: |
           [Unit]
-          Description=Python Prometheus Asset Exporter
+          Description=Prometheus Asset CMDB Exporter
           After=network.target
 
           [Service]
-          Type=simple
           ExecStart=/usr/bin/python3 /opt/asset_agent.py
           Restart=always
           User=root
@@ -240,8 +239,8 @@
     - name: Reload systemd
       command: systemctl daemon-reload
 
-    - name: Enable and start exporter service
+    - name: Enable and start exporter
       systemd:
-        name: asset_exporter.service
+        name: asset_exporter
         enabled: yes
-        state: started
+        state: restarted
