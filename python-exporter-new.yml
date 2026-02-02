@@ -1,6 +1,6 @@
 ---
 - name: Deploy Python Prometheus Asset Exporter (CMDB Style)
-  hosts: linux_servers
+  hosts: Melur
   become: yes
 
   tasks:
