@@ -1,6 +1,6 @@
 ---
 - name: Deploy Python Prometheus Asset Exporter (CMDB Style)
-  hosts: DMDUCC11DOC0005
+  hosts: linux_servers
   become: yes
 
   tasks:
@@ -60,16 +60,20 @@
           hostname = socket.gethostname()
 
           # -----------------------
-          # Inventory (CMDB)
+          # Inventory (CMDB) Gauge
           # -----------------------
           inventory = Gauge(
               "asset_inventory_info",
               "Asset inventory",
-              ["hostname","os","kernel","arch","cpu","model","bios","serial","manufacturer","ip","mac"]
+              [
+                  "hostname","os","kernel","arch","processor_model",
+                  "model","bios","serial","manufacturer","ip","mac",
+                  "ram_gb","cpu_cores"
+              ]
           )
 
           # -----------------------
-          # System
+          # System Gauges
           # -----------------------
           cpu_cores = Gauge("asset_cpu_cores","CPU cores",["hostname"])
           cpu_util = Gauge("asset_cpu_utilization_percent","CPU usage %",["hostname"])
@@ -81,7 +85,7 @@
           uptime = Gauge("asset_uptime_seconds","Uptime",["hostname"])
 
           # -----------------------
-          # Patch
+          # Patch Gauges
           # -----------------------
           patch_status = Gauge("endpoint_patch_status","Patch status",["hostname"])
           patch_time = Gauge("endpoint_patch_last_applied_timestamp","Patch time",["hostname"])
@@ -89,14 +93,14 @@
           PATCH_FILE="/opt/patch_status.txt"
 
           # -----------------------
-          # Cache
+          # Cache Gauges
           # -----------------------
           cache_today = Gauge("cache_cleared_today","Cache today",["hostname"])
           cache_time = Gauge("cache_last_cleared_timestamp","Cache time",["hostname"])
           LOG_FILE="/var/log/cache_cleanup.log"
 
           # -----------------------
-          # CrowdStrike
+          # CrowdStrike Gauges
           # -----------------------
           cs_status = Gauge("crowdstrike_sensor_status","CS running",["hostname"])
           cs_cloud = Gauge("crowdstrike_cloud_connection","CS cloud",["hostname"])
@@ -105,7 +109,7 @@
           FALCONCTL="/opt/CrowdStrike/falconctl"
 
           # -----------------------
-          # Helpers
+          # Helper Functions
           # -----------------------
           def sh(cmd):
               try: return subprocess.check_output(cmd,text=True).strip()
@@ -123,6 +127,17 @@
               if (mac >> 40) % 2:
                   return "unknown"
               return ":".join(f"{(mac >> i) & 0xff:02x}" for i in range(40, -1, -8))
+
+          def get_processor_model():
+              try:
+                  output = sh(["dmidecode","-t","processor"])
+                  # Extract the first Version line
+                  for line in output.splitlines():
+                      if "Version:" in line:
+                          return line.split("Version:")[1].strip()
+                  return "unknown"
+              except:
+                  return "unknown"
 
           def get_cache_time():
               try:
@@ -168,11 +183,13 @@
                   cs_last.labels(hostname).set(0)
 
           # -----------------------
-          # Collect
+          # Collect Metrics
           # -----------------------
           def collect():
-              ram=psutil.virtual_memory()
-              cpu_cores.labels(hostname).set(psutil.cpu_count(False))
+              ram = psutil.virtual_memory()
+              cpu_cores_count = psutil.cpu_count(logical=False)
+              processor_model = get_processor_model()
+              cpu_cores.labels(hostname).set(cpu_cores_count)
               cpu_util.labels(hostname).set(psutil.cpu_percent())
               ram_total.labels(hostname).set(ram.total/1024/1024)
               ram_used.labels(hostname).set(ram.used/1024/1024)
@@ -189,19 +206,24 @@
               users.labels(hostname).set(len(psutil.users()))
               uptime.labels(hostname).set(time.time()-psutil.boot_time())
 
+              # -----------------------
+              # Update inventory gauge
+              # -----------------------
               inventory.clear()
               inventory.labels(
                   hostname,
                   distro.name(pretty=True),
                   platform.release(),
                   platform.machine(),
-                  platform.processor(),
+                  processor_model,
                   sh(["dmidecode","-s","system-product-name"]),
                   sh(["dmidecode","-s","bios-version"]),
                   sh(["dmidecode","-s","system-serial-number"]),
                   sh(["dmidecode","-s","system-manufacturer"]),
                   get_ip(),
-                  get_primary_mac()
+                  get_primary_mac(),
+                  str(int(ram.total / 1024 / 1024 / 1024)),  # RAM in GB
+                  str(cpu_cores_count)
               ).set(1)
 
               cache_today.labels(hostname).set(get_cache_today())
@@ -210,7 +232,7 @@
               update_cs()
 
           # -----------------------
-          # Main
+          # Main Loop
           # -----------------------
           start_http_server(9888)
           while True:
@@ -218,7 +240,7 @@
               time.sleep(30)
 
     # -----------------------
-    # systemd
+    # systemd service
     # -----------------------
     - name: Create systemd service
       copy:
