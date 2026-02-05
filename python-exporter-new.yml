@@ -56,21 +56,17 @@
           #!/usr/bin/env python3
           import time, psutil, platform, socket, subprocess, os, distro, uuid
           from prometheus_client import start_http_server, Gauge
+          from datetime import datetime, date
 
           hostname = socket.gethostname()
 
           # -----------------------
           # Inventory (CMDB) Gauge
           # -----------------------
-          inventory = Gauge(
-              "asset_inventory_info",
-              "Asset inventory",
-              [
-                  "hostname","os","kernel","arch","processor_model",
-                  "model","bios","serial","manufacturer","ip","mac",
-                  "ram_gb","cpu_cores"
-              ]
-          )
+          inventory = Gauge("asset_inventory_info","Asset inventory",
+              ["hostname","os","kernel","arch","processor_model",
+               "model","bios","serial","manufacturer","ip","mac",
+               "ram_gb","cpu_cores"])
 
           # -----------------------
           # System Gauges
@@ -93,7 +89,7 @@
           PATCH_FILE="/opt/patch_status.txt"
 
           # -----------------------
-          # Cache Gauges
+          # Cache Gauges (FIXED)
           # -----------------------
           cache_today = Gauge("cache_cleared_today","Cache today",["hostname"])
           cache_time = Gauge("cache_last_cleared_timestamp","Cache time",["hostname"])
@@ -108,9 +104,6 @@
           cs_last = Gauge("crowdstrike_last_update_timestamp","CS last",["hostname"])
           FALCONCTL="/opt/CrowdStrike/falconctl"
 
-          # -----------------------
-          # Helper Functions
-          # -----------------------
           def sh(cmd):
               try: return subprocess.check_output(cmd,text=True).strip()
               except: return "unknown"
@@ -131,26 +124,35 @@
           def get_processor_model():
               try:
                   output = sh(["dmidecode","-t","processor"])
-                  # Extract the first Version line
                   for line in output.splitlines():
                       if "Version:" in line:
                           return line.split("Version:")[1].strip()
-                  return "unknown"
-              except:
-                  return "unknown"
+              except: pass
+              return "unknown"
 
-          def get_cache_time():
+          # -----------------------
+          # 🔥 FIXED Cache Parser
+          # -----------------------
+          def parse_cache_log():
+              today = date.today()
+              count = 0
+              last_ts = 0
+
               try:
                   with open(LOG_FILE) as f:
-                      line=f.readlines()[-1]
-                  return int(time.mktime(time.strptime(line.split(":")[0],"%A %d %B %Y %I:%M:%S %p IST")))
+                      for line in f:
+                          if "Cache cleared" not in line:
+                              continue
+                          ts_part = line.split(": Cache")[0]
+                          ts = datetime.strptime(ts_part, "%A %d %B %Y %I:%M:%S %p IST")
+                          ts_epoch = int(ts.timestamp())
+                          last_ts = max(last_ts, ts_epoch)
+                          if ts.date() == today:
+                              count += 1
               except:
-                  return 0
+                  pass
 
-          def get_cache_today():
-              t=get_cache_time()
-              if t==0: return 0
-              return 1 if time.strftime("%Y-%m-%d",time.localtime(t))==time.strftime("%Y-%m-%d") else 0
+              return count, last_ts
 
           def update_patch():
               s=0;t=0;c=0
@@ -175,20 +177,18 @@
                   cs_cloud.labels(hostname).set(1)
                   try:
                       cs_last.labels(hostname).set(int(sh(["stat","-c","%Y","/opt/CrowdStrike/Registry.bin"])))
-                  except: cs_last.labels(hostname).set(0)
+                  except:
+                      cs_last.labels(hostname).set(0)
               except:
                   cs_status.labels(hostname).set(0)
                   cs_cloud.labels(hostname).set(0)
                   cs_version.labels(hostname).set(0)
                   cs_last.labels(hostname).set(0)
 
-          # -----------------------
-          # Collect Metrics
-          # -----------------------
           def collect():
               ram = psutil.virtual_memory()
               cpu_cores_count = psutil.cpu_count(logical=False)
-              processor_model = get_processor_model()
+
               cpu_cores.labels(hostname).set(cpu_cores_count)
               cpu_util.labels(hostname).set(psutil.cpu_percent())
               ram_total.labels(hostname).set(ram.total/1024/1024)
@@ -206,34 +206,30 @@
               users.labels(hostname).set(len(psutil.users()))
               uptime.labels(hostname).set(time.time()-psutil.boot_time())
 
-              # -----------------------
-              # Update inventory gauge
-              # -----------------------
               inventory.clear()
               inventory.labels(
                   hostname,
                   distro.name(pretty=True),
                   platform.release(),
                   platform.machine(),
-                  processor_model,
+                  get_processor_model(),
                   sh(["dmidecode","-s","system-product-name"]),
                   sh(["dmidecode","-s","bios-version"]),
                   sh(["dmidecode","-s","system-serial-number"]),
                   sh(["dmidecode","-s","system-manufacturer"]),
                   get_ip(),
                   get_primary_mac(),
-                  str(int(ram.total / 1024 / 1024 / 1024)),  # RAM in GB
+                  str(int(ram.total/1024/1024/1024)),
                   str(cpu_cores_count)
               ).set(1)
 
-              cache_today.labels(hostname).set(get_cache_today())
-              cache_time.labels(hostname).set(get_cache_time())
+              count, last_ts = parse_cache_log()
+              cache_today.labels(hostname).set(count)
+              cache_time.labels(hostname).set(last_ts)
+
               update_patch()
               update_cs()
 
-          # -----------------------
-          # Main Loop
-          # -----------------------
           start_http_server(9888)
           while True:
               collect()
