@@ -19,25 +19,17 @@
     # -----------------------
     # pip
     # -----------------------
-    - name: Download pip installer
-      get_url:
-        url: https://bootstrap.pypa.io/get-pip.py
-        dest: /tmp/get-pip.py
-        mode: '0755'
-
-    - name: Install pip
-      command: python3 /tmp/get-pip.py --break-system-packages
-      args:
-        creates: /usr/local/bin/pip3
-
-    - name: Install python libraries
+    - name: Install python libraries from local server
       pip:
         name:
           - prometheus_client
           - psutil
           - distro
         executable: pip3
-        extra_args: --break-system-packages
+        extra_args: >
+          --no-index
+          --find-links=http://172.17.9.58/offline-packages
+          --break-system-packages
 
     # -----------------------
     # Exporter
