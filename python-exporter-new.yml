@@ -29,6 +29,7 @@
         extra_args: >
           --no-index
           --find-links=http://172.17.9.58/offline-packages
+          --trusted-host 172.17.9.58 \
           --break-system-packages
 
     # -----------------------
