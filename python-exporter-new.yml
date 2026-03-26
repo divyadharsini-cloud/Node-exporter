@@ -17,6 +17,15 @@
         update_cache: yes
 
     # -----------------------
+    # Ensure pip is available
+    # -----------------------
+    - name: Ensure pip is installed
+      apt:
+        name: python3-pip
+        state: present
+      become: yes
+
+    # -----------------------
     # pip
     # -----------------------
     - name: Install python libraries from local server
@@ -26,11 +35,7 @@
           - psutil
           - distro
         executable: pip3
-        extra_args: >
-          --no-index
-          --find-links=http://172.17.9.58/offline-packages
-          --trusted-host 172.17.9.58 \
-          --break-system-packages
+        extra_args: "--no-index --find-links=http://172.17.9.58/offline-packages --trusted-host 172.17.9.58 --break-system-packages
 
     # -----------------------
     # Exporter
