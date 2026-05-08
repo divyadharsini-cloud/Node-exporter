@@ -1,6 +1,6 @@
 ---
 - name: Deploy Python Prometheus Asset Exporter (CMDB Style)
-  hosts: TTVLIP5FTHE0141, TTVLPHGFCOR0011, TTVLPH3FRET0042
+  hosts: Glaucoma
   become: yes
 
   tasks:
