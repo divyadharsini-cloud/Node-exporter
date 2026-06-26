@@ -1,6 +1,6 @@
 ---
 - name: Deploy Python Prometheus Asset Exporter (CMDB Style)
-  hosts: DSLMPHGFIOLREF2
+  hosts: PAE
   become: yes
 
   tasks:
