@@ -1,6 +1,6 @@
 ---
 - name: Deploy Python Prometheus Asset Exporter (CMDB Style)
-  hosts: DPDYPH1FVCC0585
+  hosts: DTNJFHGFDOC0147
   become: yes
 
   tasks:
